@@ -1,9 +1,11 @@
 import { CheckCircle2 } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Suspense } from 'react';
 import { admin, isAdminConfigured } from '@/lib/admin';
+import { handleCheckoutCompleted } from '@/lib/fulfil';
 import { photoUrl } from '@/lib/listings';
 import { PLATFORM_FEE_PERCENT, formatCents, sellerShareCents } from '@/lib/money';
 import { isStripeConfigured, stripe } from '@/lib/stripe';
@@ -24,21 +26,37 @@ interface Confirmed {
   amountCents: number;
   feeCents: number;
   buyerEmail: string | null;
+  refunded: boolean;
 }
 
-// Reads the result straight from Stripe, so the page is right even if the
-// webhook that records the order arrives a moment later.
+async function siteOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost';
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+// Reads the result straight from Stripe. As Stripe recommends for Checkout,
+// the order is confirmed both here and by the webhook, with the same code:
+// whichever runs first records the order and marks the item sold, and the
+// other then changes nothing.
 async function confirmedOrder(sessionId: string, accountId: string): Promise<Confirmed | null> {
   if (!SESSION_ID.test(sessionId) || !ACCOUNT_ID.test(accountId) || !isStripeConfigured() || !isAdminConfigured()) return null;
+  const session = await stripe().checkout.sessions.retrieve(sessionId, {}, { stripeAccount: accountId });
+  if (session.payment_status !== 'paid') return null;
+  try {
+    await handleCheckoutCompleted(session, accountId, await siteOrigin());
+  } catch (error) {
+    // The webhook will retry; the page can still show the payment.
+    console.error('Confirming the order from the success page failed', error instanceof Error ? error.message : error);
+  }
   const { data: order } = await admin()
     .from('orders')
-    .select('id, listing_id, amount_cents, fee_cents, listings(title, image_path)')
+    .select('id, listing_id, amount_cents, fee_cents, status, listings(title, image_path)')
     .eq('checkout_session_id', sessionId)
     .eq('stripe_account_id', accountId)
     .maybeSingle();
   if (!order) return null;
-  const session = await stripe().checkout.sessions.retrieve(sessionId, {}, { stripeAccount: accountId });
-  if (session.payment_status !== 'paid') return null;
   const listing = (Array.isArray(order.listings) ? order.listings[0] : order.listings) as { title: string; image_path: string } | null;
   return {
     orderId: order.id,
@@ -48,6 +66,7 @@ async function confirmedOrder(sessionId: string, accountId: string): Promise<Con
     amountCents: order.amount_cents,
     feeCents: order.fee_cents,
     buyerEmail: session.customer_details?.email ?? null,
+    refunded: order.status === 'refunded',
   };
 }
 
@@ -78,6 +97,18 @@ async function Result({ searchParams }: { searchParams: Params }) {
         <h1 className="text-2xl font-bold">We couldn&apos;t confirm this payment</h1>
         <p className="mt-2 text-ink-soft">If you paid, the seller will still receive your order. Otherwise, go back to the listing and try again.</p>
         <Link href="/" className={`${BUTTON} mt-4`}>Back to listings</Link>
+      </div>
+    );
+  }
+
+  if (order.refunded) {
+    return (
+      <div role="status" className="rounded-2xl bg-surface p-6">
+        <h1 className="text-2xl font-bold">This item had just been sold</h1>
+        <p className="mt-2 text-ink-soft">
+          Someone bought {order.title} a moment before you. Your payment of {formatCents(order.amountCents)} has been refunded in full.
+        </p>
+        <Link href="/" className={`${BUTTON} mt-4`}>Keep shopping</Link>
       </div>
     );
   }
