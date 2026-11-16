@@ -62,7 +62,7 @@ All screenshots are in the [`screenshots`](screenshots) folder.
 | [`07-success.jpg`](screenshots/07-success.jpg) | The success page with the payment split |
 | [`08-sold.jpg`](screenshots/08-sold.jpg) | The listing after purchase, marked Sold |
 | [`09-order-in-supabase.png`](screenshots/09-order-in-supabase.png) | The paid order saved in Supabase |
-| [`10-phone.png`](screenshots/10-phone.png) | A listing with Buy Now on a phone |
+| [`10-phone.jpg`](screenshots/10-phone.jpg) | A listing with Buy Now on a phone |
 
 | Buy Now | Stripe Checkout | Success page |
 |---|---|---|
