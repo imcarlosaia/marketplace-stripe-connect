@@ -2,7 +2,7 @@
 
 The Marketplace from Test 3, now able to take payments. Sellers connect a Stripe account, their listings get a **Buy Now** button, buyers pay with Stripe Checkout, the seller is paid minus a 10% platform fee, and the item is marked **Sold**. Built with React, Next.js, Supabase and Stripe Connect, and it runs entirely in Stripe's sandbox (test mode), so no real money moves.
 
-**See it live:** _link added after deployment_
+**See it live:** https://marketplace-stripe-connect.vercel.app
 
 ![The home page with listings, one of them sold](screenshots/01-home.jpg)
 
@@ -34,6 +34,7 @@ To connect a new seller, click **Get paid** in the header (on phones: **Sell**, 
 ### 4. Order confirmation
 - After paying, the buyer sees a **success page** with the item, the amount paid and the split between seller and marketplace.
 - A **Stripe webhook** (`/api/stripe/webhook`, signature checked on every request) confirms the payment, saves the order in Supabase as **paid** and marks the listing **Sold**. Sold items stay visible with a Sold badge and can't be bought again.
+- As Stripe recommends for Checkout, the success page runs the same confirmation, checking the payment with Stripe directly. Whichever runs first records the order; the other then changes nothing, so an order is never recorded twice.
 - The webhook also keeps each seller's "can take payments" state up to date (`account.updated`), and ignores events from other apps that share the sandbox.
 - If two buyers pay for the same item at the same moment, only one order can be marked paid; the other payment is refunded automatically.
 - The seller also gets a "Your item sold" email with the amount and fee (through Brevo).
